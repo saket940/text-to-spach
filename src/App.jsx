@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const TextToSpeechDashboard = () => {
-  // State variables for speech customization properties
   const [text, setText] = useState('Hello! Adjust the configurations below to see how my voice dynamically adapts.');
   const [voices, setVoices] = useState([]);
   const [selectedVoiceName, setSelectedVoiceName] = useState('');
@@ -10,8 +9,17 @@ const TextToSpeechDashboard = () => {
   const [pitch, setPitch] = useState(1.0);
   const [status, setStatus] = useState('Idle');
   const [isPaused, setIsPaused] = useState(false);
+  
+  // New States for Word Limit Control
+  const [wordLimit, setWordLimit] = useState(20); 
+  const [actualWordCount, setActualWordCount] = useState(0);
 
-  // 1. Fetch and Populate Available System Voices
+  // Dynamically calculate the word count of the current text string
+  useEffect(() => {
+    const words = text.trim().split(/\s+/).filter(word => word.length > 0);
+    setActualWordCount(words.length);
+  }, [text]);
+
   useEffect(() => {
     if (typeof window === 'undefined' || !window.speechSynthesis) return;
 
@@ -19,9 +27,7 @@ const TextToSpeechDashboard = () => {
       const availableVoices = window.speechSynthesis.getVoices();
       setVoices(availableVoices);
 
-      // Default selection fallback optimization
       if (availableVoices.length > 0 && !selectedVoiceName) {
-        // Try to find a default English voice or take the first available
         const defaultVoice = availableVoices.find(v => v.lang.startsWith('en')) || availableVoices[0];
         setSelectedVoiceName(defaultVoice.name);
       }
@@ -29,22 +35,28 @@ const TextToSpeechDashboard = () => {
 
     updateVoices();
 
-    // Chrome and Edge load voices asynchronously
     if (window.speechSynthesis.onvoiceschanged !== undefined) {
       window.speechSynthesis.onvoiceschanged = updateVoices;
     }
   }, [selectedVoiceName]);
 
-  // 2. Play Execution Logic Pipeline
+  // Play Execution Logic Pipeline with Word Limiter
   const handleSpeak = () => {
     if (!window.speechSynthesis) return;
 
-    // Clear active system audio pipelines first
     window.speechSynthesis.cancel();
 
     if (!text.trim()) return;
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    // 1. Process the text array to enforce word limit constraints
+    const wordsArray = text.trim().split(/\s+/).filter(word => word.length > 0);
+    
+    // Slice array up to the specified limit and join back into a sentence string
+    const processedText = wordsArray.slice(0, wordLimit).join(' ');
+
+    if (!processedText) return;
+
+    const utterance = new SpeechSynthesisUtterance(processedText);
 
     // Bind custom ranges state
     utterance.volume = volume;
@@ -58,9 +70,8 @@ const TextToSpeechDashboard = () => {
       utterance.lang = targetVoice.lang;
     }
 
-    // Lifecycle listener assignments
     utterance.onstart = () => {
-      setStatus('Speaking...');
+      setStatus(`Speaking (Limited to ${wordLimit} words)...`);
       setIsPaused(false);
     };
 
@@ -77,7 +88,6 @@ const TextToSpeechDashboard = () => {
     window.speechSynthesis.speak(utterance);
   };
 
-  // 3. Pause / Resume Toggle Management
   const handlePauseResume = () => {
     if (!window.speechSynthesis) return;
 
@@ -92,7 +102,6 @@ const TextToSpeechDashboard = () => {
     }
   };
 
-  // 4. Force Stop Audio Pipeline
   const handleStop = () => {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
@@ -110,7 +119,12 @@ const TextToSpeechDashboard = () => {
 
         {/* Text Input Block */}
         <div className="mb-5">
-          <label className="block text-sm font-semibold text-[#94a3b8] mb-2">Text to Speak</label>
+          <div className="flex justify-between items-center mb-2">
+            <label className="text-sm font-semibold text-[#94a3b8]">Text to Speak</label>
+            <span className="text-xs font-mono text-[#94a3b8]">
+              Total Words: <span className={actualWordCount > wordLimit ? "text-yellow-500 font-bold" : "text-[#38bdf8]"}>{actualWordCount}</span>
+            </span>
+          </div>
           <textarea
             className="w-full h-24 bg-[#0f172a] border border-[#334155] rounded-md text-[#f8fafc] p-3 box-border resize-y text-base outline-none focus:border-[#38bdf8]"
             value={text}
@@ -118,10 +132,27 @@ const TextToSpeechDashboard = () => {
           />
         </div>
 
+        {/* Word Limit Slider block */}
+        <div className="mb-5 p-3 bg-[#0f172a]/50 rounded-lg border border-[#334155]/60">
+          <label className="block text-sm font-semibold text-[#94a3b8] mb-2">Word Limit Cap</label>
+          <div className="flex items-center gap-4">
+            <input
+              type="range"
+              min="1"
+              max="100"
+              step="1"
+              className="flex-1 accent-yellow-500 cursor-pointer"
+              value={wordLimit}
+              onChange={(e) => setWordLimit(parseInt(e.target.value))}
+            />
+            <span className="min-w-[45px] text-right font-mono text-yellow-500 font-bold">{wordLimit} words</span>
+          </div>
+        </div>
+
         {/* Voice Select Element */}
         <div className="mb-5">
           <label className="block text-sm font-semibold text-[#94a3b8] mb-2">
-            Select Engine Voice (Name & Language Profile)
+            Select Engine Voice
           </label>
           <select
             className="w-full bg-[#0f172a] border border-[#334155] rounded-md text-[#f8fafc] p-3 text-sm cursor-pointer outline-none focus:border-[#38bdf8]"
@@ -159,7 +190,7 @@ const TextToSpeechDashboard = () => {
 
         {/* Rate / Speed Settings Slider */}
         <div className="mb-5">
-          <label className="block text-sm font-semibold text-[#94a3b8] mb-2">Rate / Speed (0.1 to 10)</label>
+          <label className="block text-sm font-semibold text-[#94a3b8] mb-2">Rate / Speed (0.1 to 3)</label>
           <div className="flex items-center gap-4">
             <input
               type="range"
@@ -191,7 +222,7 @@ const TextToSpeechDashboard = () => {
           </div>
         </div>
 
-        {/* Execution Trigger Group Controls */}
+        {/* Control Buttons */}
         <div className="grid grid-cols-3 gap-3 mt-6">
           <button
             onClick={handleSpeak}
@@ -213,7 +244,7 @@ const TextToSpeechDashboard = () => {
           </button>
         </div>
 
-        {/* Dynamic App Status Output */}
+        {/* Status Window */}
         <div className="mt-5 text-sm text-center text-[#94a3b8] italic">
           Status: {status}
         </div>
