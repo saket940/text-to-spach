@@ -1,257 +1,462 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from "react";
 
-const TextToSpeechDashboard = () => {
-  const [text, setText] = useState('Hello! Adjust the configurations below to see how my voice dynamically adapts.');
+export default function AdvancedTTS() {
+
+  const [text, setText] = useState(
+    "Hello! This is an advanced React text to speech generator."
+  );
+
   const [voices, setVoices] = useState([]);
-  const [selectedVoiceName, setSelectedVoiceName] = useState('');
-  const [volume, setVolume] = useState(1.0);
-  const [rate, setRate] = useState(1.1);
-  const [pitch, setPitch] = useState(1.0);
-  const [status, setStatus] = useState('Idle');
-  const [isPaused, setIsPaused] = useState(false);
-  
-  // New States for Word Limit Control
-  const [wordLimit, setWordLimit] = useState(20); 
-  const [actualWordCount, setActualWordCount] = useState(0);
 
-  // Dynamically calculate the word count of the current text string
+  const [selectedVoice, setSelectedVoice] = useState(0);
+
+  const [speed, setSpeed] = useState(1);
+  const [pitch, setPitch] = useState(1);
+  const [volume, setVolume] = useState(1);
+
+  const [status, setStatus] = useState("Idle");
+
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const [audioUrl, setAudioUrl] = useState("");
+
+  const mediaRecorderRef = useRef(null);
+
+  const audioChunksRef = useRef([]);
+
+  const MAX_WORDS = 500;
+  const MAX_CHARS = 3000;
+
+  // LOAD VOICES
+
   useEffect(() => {
-    const words = text.trim().split(/\s+/).filter(word => word.length > 0);
-    setActualWordCount(words.length);
-  }, [text]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const loadVoices = () => {
 
-    const updateVoices = () => {
-      const availableVoices = window.speechSynthesis.getVoices();
-      setVoices(availableVoices);
+      const allVoices = speechSynthesis.getVoices();
 
-      if (availableVoices.length > 0 && !selectedVoiceName) {
-        const defaultVoice = availableVoices.find(v => v.lang.startsWith('en')) || availableVoices[0];
-        setSelectedVoiceName(defaultVoice.name);
-      }
+      setVoices(allVoices);
+
     };
 
-    updateVoices();
+    loadVoices();
 
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      window.speechSynthesis.onvoiceschanged = updateVoices;
+    speechSynthesis.onvoiceschanged = loadVoices;
+
+  }, []);
+
+  // WORD COUNT
+
+  const wordCount =
+    text.trim() === ""
+      ? 0
+      : text.trim().split(/\s+/).length;
+
+  const charCount = text.length;
+
+  // TEXT CHANGE
+
+  const handleTextChange = (e) => {
+
+    let value = e.target.value;
+
+    // CHARACTER LIMIT
+
+    if (value.length > MAX_CHARS) {
+
+      value = value.substring(0, MAX_CHARS);
+
     }
-  }, [selectedVoiceName]);
 
-  // Play Execution Logic Pipeline with Word Limiter
-  const handleSpeak = () => {
-    if (!window.speechSynthesis) return;
+    // WORD LIMIT
 
-    window.speechSynthesis.cancel();
+    const words = value.trim().split(/\s+/);
+
+    if (words.length > MAX_WORDS) {
+
+      value = words.slice(0, MAX_WORDS).join(" ");
+
+    }
+
+    setText(value);
+
+  };
+
+  // CREATE SPEECH
+
+  const createUtterance = () => {
+
+    const utterance =
+      new SpeechSynthesisUtterance(text);
+
+    utterance.voice =
+      voices[selectedVoice];
+
+    utterance.rate = speed;
+
+    utterance.pitch = pitch;
+
+    utterance.volume = volume;
+
+    return utterance;
+
+  };
+
+  // SPEAK
+
+  const speakText = () => {
 
     if (!text.trim()) return;
 
-    // 1. Process the text array to enforce word limit constraints
-    const wordsArray = text.trim().split(/\s+/).filter(word => word.length > 0);
-    
-    // Slice array up to the specified limit and join back into a sentence string
-    const processedText = wordsArray.slice(0, wordLimit).join(' ');
+    speechSynthesis.cancel();
 
-    if (!processedText) return;
+    const utterance = createUtterance();
 
-    const utterance = new SpeechSynthesisUtterance(processedText);
+    setIsGenerating(true);
 
-    // Bind custom ranges state
-    utterance.volume = volume;
-    utterance.rate = rate;
-    utterance.pitch = pitch;
-
-    // Find and map matching voice profile
-    const targetVoice = voices.find(v => v.name === selectedVoiceName);
-    if (targetVoice) {
-      utterance.voice = targetVoice;
-      utterance.lang = targetVoice.lang;
-    }
-
-    utterance.onstart = () => {
-      setStatus(`Speaking (Limited to ${wordLimit} words)...`);
-      setIsPaused(false);
-    };
+    setStatus("Generating Voice...");
 
     utterance.onend = () => {
-      setStatus('Finished');
-      setIsPaused(false);
+
+      setIsGenerating(false);
+
+      setStatus("Completed");
+
     };
 
-    utterance.onerror = (e) => {
-      setStatus(`Error encountered (${e.error})`);
-      setIsPaused(false);
-    };
+    speechSynthesis.speak(utterance);
 
-    window.speechSynthesis.speak(utterance);
   };
 
-  const handlePauseResume = () => {
-    if (!window.speechSynthesis) return;
+  // PAUSE
 
-    if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-      window.speechSynthesis.pause();
-      setStatus('Paused');
-      setIsPaused(true);
-    } else if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-      setStatus('Speaking...');
-      setIsPaused(false);
+  const pauseSpeech = () => {
+
+    speechSynthesis.pause();
+
+    setStatus("Paused");
+
+  };
+
+  // STOP
+
+  const stopSpeech = () => {
+
+    speechSynthesis.cancel();
+
+    setIsGenerating(false);
+
+    setStatus("Stopped");
+
+  };
+
+  // DOWNLOAD AUDIO
+
+  const downloadAudio = async () => {
+
+    try {
+
+      const stream =
+        await navigator.mediaDevices.getDisplayMedia({
+          audio: true,
+          video: true,
+        });
+
+      const mediaRecorder =
+        new MediaRecorder(stream);
+
+      mediaRecorderRef.current =
+        mediaRecorder;
+
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable =
+        (event) => {
+
+          audioChunksRef.current.push(event.data);
+
+        };
+
+      mediaRecorder.onstop = () => {
+
+        const audioBlob =
+          new Blob(audioChunksRef.current, {
+            type: "audio/webm",
+          });
+
+        const url =
+          URL.createObjectURL(audioBlob);
+
+        setAudioUrl(url);
+
+        const a =
+          document.createElement("a");
+
+        a.href = url;
+
+        a.download = "tts-audio.webm";
+
+        a.click();
+
+      };
+
+      mediaRecorder.start();
+
+      const utterance =
+        createUtterance();
+
+      setIsGenerating(true);
+
+      setStatus("Generating & Recording...");
+
+      utterance.onend = () => {
+
+        mediaRecorder.stop();
+
+        setIsGenerating(false);
+
+        setStatus("Download Complete");
+
+      };
+
+      speechSynthesis.speak(utterance);
+
+    } catch (error) {
+
+      alert(
+        "Recording failed: " +
+        error.message
+      );
+
+      setIsGenerating(false);
+
+      setStatus("Failed");
+
     }
-  };
 
-  const handleStop = () => {
-    if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    setStatus('Stopped / Queue Cleared');
-    setIsPaused(false);
   };
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-[#f8fafc] flex items-center justify-center p-5">
-      <div className="bg-[#1e293b] border border-[#334155] rounded-xl p-8 w-full max-w-xl shadow-2xl">
-        
-        <h1 className="text-3xl font-bold mb-6 text-center text-[#38bdf8] border-b-2 border-[#334155] pb-4">
-          Web TTS Customizer
+
+    <div className="min-h-screen bg-slate-900 text-white p-5">
+
+      <div className="max-w-5xl mx-auto bg-slate-800 p-6 rounded-3xl shadow-2xl">
+
+        <h1 className="text-4xl font-bold text-center mb-6">
+          🎤 Advanced React TTS Generator
         </h1>
 
-        {/* Text Input Block */}
-        <div className="mb-5">
-          <div className="flex justify-between items-center mb-2">
-            <label className="text-sm font-semibold text-[#94a3b8]">Text to Speak</label>
-            <span className="text-xs font-mono text-[#94a3b8]">
-              Total Words: <span className={actualWordCount > wordLimit ? "text-yellow-500 font-bold" : "text-[#38bdf8]"}>{actualWordCount}</span>
-            </span>
-          </div>
-          <textarea
-            className="w-full h-24 bg-[#0f172a] border border-[#334155] rounded-md text-[#f8fafc] p-3 box-border resize-y text-base outline-none focus:border-[#38bdf8]"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
+        {/* TEXTAREA */}
+
+        <textarea
+          value={text}
+          onChange={handleTextChange}
+          className="w-full h-52 p-4 rounded-2xl bg-slate-700 outline-none resize-none text-lg"
+        />
+
+        {/* COUNTS */}
+
+        <div className="flex justify-between flex-wrap gap-2 mt-3 text-slate-300">
+
+          <p>
+            Words: {wordCount} / {MAX_WORDS}
+          </p>
+
+          <p>
+            Characters: {charCount} / {MAX_CHARS}
+          </p>
+
         </div>
 
-        {/* Word Limit Slider block */}
-        <div className="mb-5 p-3 bg-[#0f172a]/50 rounded-lg border border-[#334155]/60">
-          <label className="block text-sm font-semibold text-[#94a3b8] mb-2">Word Limit Cap</label>
-          <div className="flex items-center gap-4">
-            <input
-              type="range"
-              min="1"
-              max="100"
-              step="1"
-              className="flex-1 accent-yellow-500 cursor-pointer"
-              value={wordLimit}
-              onChange={(e) => setWordLimit(parseInt(e.target.value))}
-            />
-            <span className="min-w-[45px] text-right font-mono text-yellow-500 font-bold">{wordLimit} words</span>
-          </div>
-        </div>
+        {/* CONTROLS */}
 
-        {/* Voice Select Element */}
-        <div className="mb-5">
-          <label className="block text-sm font-semibold text-[#94a3b8] mb-2">
-            Select Engine Voice
-          </label>
-          <select
-            className="w-full bg-[#0f172a] border border-[#334155] rounded-md text-[#f8fafc] p-3 text-sm cursor-pointer outline-none focus:border-[#38bdf8]"
-            value={selectedVoiceName}
-            onChange={(e) => setSelectedVoiceName(e.target.value)}
-          >
-            {voices.length === 0 ? (
-              <option>Loading engine profiles...</option>
-            ) : (
-              voices.map((voice) => (
-                <option key={voice.name} value={voice.name}>
-                  {voice.name} ({voice.lang}) {voice.localService ? '[Local]' : '[Cloud]'}
+        <div className="grid md:grid-cols-2 gap-5 mt-6">
+
+          {/* VOICE */}
+
+          <div className="bg-slate-700 p-4 rounded-2xl">
+
+            <label className="font-bold block mb-2">
+              Select Voice
+            </label>
+
+            <select
+              value={selectedVoice}
+              onChange={(e) =>
+                setSelectedVoice(e.target.value)
+              }
+              className="w-full p-3 rounded-xl bg-slate-800"
+            >
+
+              {voices.map((voice, index) => (
+
+                <option
+                  key={index}
+                  value={index}
+                >
+                  {voice.name} ({voice.lang})
                 </option>
-              ))
-            )}
-          </select>
-        </div>
 
-        {/* Volume Settings Slider */}
-        <div className="mb-5">
-          <label className="block text-sm font-semibold text-[#94a3b8] mb-2">Volume (0 to 1)</label>
-          <div className="flex items-center gap-4">
+              ))}
+
+            </select>
+
+          </div>
+
+          {/* SPEED */}
+
+          <div className="bg-slate-700 p-4 rounded-2xl">
+
+            <label className="font-bold block mb-2">
+              Speed: {speed}
+            </label>
+
             <input
               type="range"
-              min="0"
-              max="1"
+              min="0.5"
+              max="2"
               step="0.1"
-              className="flex-1 accent-[#38bdf8] cursor-pointer"
-              value={volume}
-              onChange={(e) => setVolume(parseFloat(e.target.value))}
+              value={speed}
+              onChange={(e) =>
+                setSpeed(parseFloat(e.target.value))
+              }
+              className="w-full"
             />
-            <span className="min-w-[35px] text-right font-mono text-[#38bdf8]">{volume.toFixed(1)}</span>
-          </div>
-        </div>
 
-        {/* Rate / Speed Settings Slider */}
-        <div className="mb-5">
-          <label className="block text-sm font-semibold text-[#94a3b8] mb-2">Rate / Speed (0.1 to 3)</label>
-          <div className="flex items-center gap-4">
-            <input
-              type="range"
-              min="0.1"
-              max="3"
-              step="0.1"
-              className="flex-1 accent-[#38bdf8] cursor-pointer"
-              value={rate}
-              onChange={(e) => setRate(parseFloat(e.target.value))}
-            />
-            <span className="min-w-[35px] text-right font-mono text-[#38bdf8]">{rate.toFixed(1)}</span>
           </div>
-        </div>
 
-        {/* Pitch Settings Slider */}
-        <div className="mb-5">
-          <label className="block text-sm font-semibold text-[#94a3b8] mb-2">Pitch (0 to 2)</label>
-          <div className="flex items-center gap-4">
+          {/* PITCH */}
+
+          <div className="bg-slate-700 p-4 rounded-2xl">
+
+            <label className="font-bold block mb-2">
+              Pitch: {pitch}
+            </label>
+
             <input
               type="range"
               min="0"
               max="2"
               step="0.1"
-              className="flex-1 accent-[#38bdf8] cursor-pointer"
               value={pitch}
-              onChange={(e) => setPitch(parseFloat(e.target.value))}
+              onChange={(e) =>
+                setPitch(parseFloat(e.target.value))
+              }
+              className="w-full"
             />
-            <span className="min-w-[35px] text-right font-mono text-[#38bdf8]">{pitch.toFixed(1)}</span>
+
           </div>
+
+          {/* VOLUME */}
+
+          <div className="bg-slate-700 p-4 rounded-2xl">
+
+            <label className="font-bold block mb-2">
+              Volume: {volume}
+            </label>
+
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value={volume}
+              onChange={(e) =>
+                setVolume(parseFloat(e.target.value))
+              }
+              className="w-full"
+            />
+
+          </div>
+
         </div>
 
-        {/* Control Buttons */}
-        <div className="grid grid-cols-3 gap-3 mt-6">
+        {/* BUTTONS */}
+
+        <div className="flex flex-wrap gap-4 mt-8">
+
           <button
-            onClick={handleSpeak}
-            className="bg-[#22c55e] hover:bg-[#16a34a] text-white font-bold p-3 rounded-md transition-all active:scale-[0.98]"
+            onClick={speakText}
+            className="bg-green-500 hover:scale-105 transition px-6 py-3 rounded-2xl font-bold"
           >
-            Speak
+            ▶ Speak
           </button>
+
           <button
-            onClick={handlePauseResume}
-            className="bg-[#eab308] hover:bg-[#ca8a04] text-white font-bold p-3 rounded-md transition-all active:scale-[0.98]"
+            onClick={pauseSpeech}
+            className="bg-yellow-400 text-black hover:scale-105 transition px-6 py-3 rounded-2xl font-bold"
           >
-            {isPaused ? 'Resume' : 'Pause'}
+            ⏸ Pause
           </button>
+
           <button
-            onClick={handleStop}
-            className="bg-[#ef4444] hover:bg-[#dc2626] text-white font-bold p-3 rounded-md transition-all active:scale-[0.98]"
+            onClick={stopSpeech}
+            className="bg-red-500 hover:scale-105 transition px-6 py-3 rounded-2xl font-bold"
           >
-            Stop
+            ⏹ Stop
           </button>
+
+          <button
+            onClick={downloadAudio}
+            className="bg-blue-500 hover:scale-105 transition px-6 py-3 rounded-2xl font-bold"
+          >
+            ⬇ Download
+          </button>
+
         </div>
 
-        {/* Status Window */}
-        <div className="mt-5 text-sm text-center text-[#94a3b8] italic">
-          Status: {status}
+        {/* GENERATING EFFECT */}
+
+        <div className="bg-slate-700 rounded-3xl p-6 mt-8">
+
+          <h2 className="text-2xl font-bold text-center mb-5">
+            🎵 Voice Generating Effect
+          </h2>
+
+          <div className="flex justify-center items-end gap-2 h-28">
+
+            {[...Array(10)].map((_, index) => (
+
+              <div
+                key={index}
+                className={`w-3 rounded-full bg-cyan-400
+                ${
+                  isGenerating
+                    ? "animate-bounce h-20"
+                    : "h-6"
+                }`}
+                style={{
+                  animationDelay:
+                    `${index * 0.1}s`,
+                }}
+              />
+
+            ))}
+
+          </div>
+
+          <p className="text-center mt-5 text-cyan-400 text-xl font-bold">
+            {status}
+          </p>
+
         </div>
+
+        {/* AUDIO */}
+
+        {audioUrl && (
+
+          <audio
+            controls
+            src={audioUrl}
+            className="w-full mt-6"
+          />
+
+        )}
 
       </div>
-    </div>
-  );
-};
 
-export default TextToSpeechDashboard;
+    </div>
+
+  );
+
+}
